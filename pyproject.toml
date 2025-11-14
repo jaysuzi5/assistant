@@ -1,0 +1,19 @@
+[project]
+name = "assistant"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = "==3.13.2"
+dependencies = [
+    "beautifulsoup4>=4.14.2",
+    "dotenv>=0.9.9",
+    "gradio>=5.49.1",
+    "langchain>=1.0.5",
+    "langchain-community>=0.4.1",
+    "langchain-experimental>=0.4.0",
+    "langchain-openai>=1.0.2",
+    "langgraph>=1.0.3",
+    "lxml>=6.0.2",
+    "playwright>=1.56.0",
+    "wikipedia>=1.4.0",
+]
