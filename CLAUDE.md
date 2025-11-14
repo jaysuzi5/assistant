@@ -2,6 +2,23 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## ⚡ Experimental Project Mode
+
+**This is an experimental research project.** You are encouraged to:
+- ✅ Make autonomous decisions without asking for confirmation
+- ✅ Implement improvements and enhancements proactively
+- ✅ Refactor code to improve quality and maintainability
+- ✅ Add tests, documentation, and type hints
+- ✅ Optimize performance and reduce technical debt
+- ✅ Merge branches and push code automatically
+
+**Override these defaults ONLY if explicitly stated.** For example:
+- "Code must pass all unit tests before committing"
+- "Ask before removing features"
+- "Wait for approval before deploying"
+
+**Default behavior:** Proceed with confidence. You have full autonomy to make decisions you believe improve the project.
+
 ## Project Overview
 
 **Sidekick** is an AI agent framework built on LangGraph that automates tasks through intelligent tool use. It combines an LLM worker (for task planning and execution), automated tool execution, and an evaluator (for success validation) in a closed-loop agentic workflow.
@@ -189,6 +206,31 @@ README.md              # Basic project description
 - `PUSHOVER_USER`: Pushover user key for notifications
 - `LANGSMITH_API_KEY`: LangSmith tracing (if enabled)
 
+## Decision-Making Guidelines
+
+### Autonomous Decision Framework
+
+You have full autonomy to make these decisions **without asking**:
+
+1. **Code Quality**: Refactor, add type hints, improve naming, optimize algorithms
+2. **Testing**: Add tests, improve test coverage, fix failing tests
+3. **Documentation**: Add docstrings, comments, README updates, architecture diagrams
+4. **Dependencies**: Add well-vetted dependencies if they improve the codebase
+5. **Error Handling**: Add try-catch blocks, improve error messages, add validation
+6. **Performance**: Optimize hot paths, reduce technical debt, improve efficiency
+7. **Git Operations**: Commit, push, merge, delete branches as needed
+8. **File Organization**: Move files, rename modules, reorganize directories
+9. **Feature Completion**: Complete partially-implemented features, fill in TODOs
+10. **Breaking Changes**: Only if they improve maintainability (this is experimental)
+
+### When to Ask for Confirmation
+
+Explicitly ask ONLY if:
+- The user provides a constraint like "code must pass all tests before committing"
+- The user says "wait for approval before deploying"
+- The change removes functionality the user may depend on
+- The change requires choices between multiple valid approaches
+
 ## Important Notes for Future Work
 
 1. **Security**: Rotate API keys immediately; `.env` should never be in version control
@@ -197,3 +239,32 @@ README.md              # Basic project description
 4. **Tool Binding**: Tools auto-discovered via `bind_tools()`; order matters for function-calling preference
 5. **Feedback Loop**: Evaluator feedback injected via `feedback_on_work` state variable; enables iterative refinement
 6. **Resource Cleanup**: Always call `sidekick.cleanup()` to close browser/playwright or pass `sidekick` to Gradio state with `delete_callback`
+
+## Code Quality Standards
+
+When making improvements, aim for:
+
+- **Type Hints**: All functions should have complete type annotations
+- **Docstrings**: All public functions/classes should have comprehensive docstrings
+- **Error Handling**: Specific exceptions caught, not generic `Exception`
+- **Testing**: New code should have unit tests with >80% coverage
+- **Logging**: Use structured logging, avoid print statements
+- **No Duplication**: Extract common patterns into reusable functions
+- **Performance**: Reasonable time/space complexity for the task
+- **Security**: Validate inputs, sanitize outputs, avoid hardcoded secrets
+
+## Experimental Features
+
+This project is actively evolving. Feel free to:
+- Experiment with new patterns or approaches
+- Try out new libraries or frameworks
+- Refactor legacy code
+- Remove deprecated code
+- Propose architectural improvements
+- Add metrics or observability
+
+Just ensure each change is:
+1. ✅ Well-tested (new tests added)
+2. ✅ Well-documented (docstrings, comments)
+3. ✅ All existing tests still pass
+4. ✅ Committed with clear commit messages
