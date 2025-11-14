@@ -10,6 +10,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from typing import List, Any, Optional, Dict
 from pydantic import BaseModel, Field
 from sidekick_tools import playwright_tools, other_tools
+from llm_invocation import invoke_with_retry_sync, LLMInvocationError
 import uuid
 import asyncio
 from datetime import datetime
@@ -58,6 +59,20 @@ class Sidekick:
         await self.build_graph()
 
     def worker(self, state: State) -> Dict[str, Any]:
+        """Execute worker node to invoke LLM and process messages.
+
+        This method invokes the worker LLM with tool binding to generate responses.
+        It includes comprehensive error handling and retry logic for API failures.
+
+        Args:
+            state: Current graph state containing messages and context
+
+        Returns:
+            Updated state with LLM response
+
+        Raises:
+            LLMInvocationError: If LLM invocation fails after retries
+        """
         system_message = f"""You are a helpful assistant that can use tools to complete tasks.
     You keep working on a task until either you have a question or clarification for the user, or the success criteria is met.
     You have many tools to help you, including tools to browse the internet, navigating and retrieving web pages.
@@ -93,8 +108,27 @@ class Sidekick:
         if not found_system_message:
             messages = [SystemMessage(content=system_message)] + messages
 
-        # Invoke the LLM with tools
-        response = self.worker_llm_with_tools.invoke(messages)
+        # Invoke the LLM with tools with retry logic
+        try:
+            response = invoke_with_retry_sync(
+                lambda: self.worker_llm_with_tools.invoke(messages),
+                max_retries=3,
+                initial_delay=1.0,
+                operation_name="Worker LLM invocation"
+            )
+        except LLMInvocationError as e:
+            logger.error(
+                f"Worker LLM invocation failed: {e}",
+                exc_info=True
+            )
+            # Return an error message to the user instead of crashing
+            error_response = HumanMessage(
+                content=f"I encountered an error while processing your request: {type(e.original_error).__name__}. "
+                        f"Please try again or rephrase your request. Details: {str(e.original_error)}"
+            )
+            return {
+                "messages": [error_response],
+            }
 
         # Return updated state
         return {
@@ -120,6 +154,21 @@ class Sidekick:
         return conversation
 
     def evaluator(self, state: State) -> State:
+        """Evaluate the assistant's response against success criteria.
+
+        This method invokes the evaluator LLM to determine if the task has been
+        completed successfully. It includes comprehensive error handling and retry
+        logic for API failures.
+
+        Args:
+            state: Current graph state with messages and criteria
+
+        Returns:
+            Updated state with evaluation results
+
+        Raises:
+            LLMInvocationError: If evaluator LLM invocation fails after retries
+        """
         last_response = state["messages"][-1].content
 
         system_message = """You are an evaluator that determines if a task has been completed successfully by an Assistant.
@@ -153,7 +202,34 @@ class Sidekick:
             HumanMessage(content=user_message),
         ]
 
-        eval_result = self.evaluator_llm_with_output.invoke(evaluator_messages)
+        # Invoke evaluator LLM with retry logic
+        try:
+            eval_result = invoke_with_retry_sync(
+                lambda: self.evaluator_llm_with_output.invoke(evaluator_messages),
+                max_retries=3,
+                initial_delay=1.0,
+                operation_name="Evaluator LLM invocation"
+            )
+        except LLMInvocationError as e:
+            logger.error(
+                f"Evaluator LLM invocation failed: {e}",
+                exc_info=True
+            )
+            # Return a state that requests user input (fail-safe)
+            new_state = {
+                "messages": [
+                    {
+                        "role": "assistant",
+                        "content": f"Evaluator encountered an error: {type(e.original_error).__name__}. "
+                                   f"Requesting user input to proceed.",
+                    }
+                ],
+                "feedback_on_work": f"Evaluation failed: {type(e.original_error).__name__}. Please try again.",
+                "success_criteria_met": False,
+                "user_input_needed": True,
+            }
+            return new_state
+
         new_state = {
             "messages": [
                 {
