@@ -5,3 +5,5 @@ __pycache__/
 *.pyo
 sandbox/
 results.txt
+.coverage
+.DS_Store
