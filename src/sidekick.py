@@ -13,8 +13,11 @@ from sidekick_tools import playwright_tools, other_tools
 import uuid
 import asyncio
 from datetime import datetime
+import logging
 
 load_dotenv(override=True)
+
+logger = logging.getLogger(__name__)
 
 
 class State(TypedDict):
@@ -208,15 +211,47 @@ class Sidekick:
         feedback = {"role": "assistant", "content": result["messages"][-1].content}
         return history + [user, reply, feedback]
 
-    def cleanup(self):
-        if self.browser:
+    async def cleanup(self) -> None:
+        """Properly cleanup browser and playwright resources.
+
+        This method ensures that the browser and playwright instances are
+        cleanly closed. It should be awaited to guarantee completion before
+        the sidekick instance is destroyed.
+
+        Raises:
+            Exception: Any exceptions from browser.close() or playwright.stop()
+                       are logged but not re-raised to prevent cleanup failures
+                       from masking other errors.
+        """
+        if not self.browser:
+            logger.debug(f"Sidekick {self.sidekick_id}: No browser to cleanup")
+            return
+
+        logger.info(f"Sidekick {self.sidekick_id}: Starting resource cleanup")
+
+        # Close browser
+        try:
+            logger.debug(f"Sidekick {self.sidekick_id}: Closing browser")
+            await self.browser.close()
+            logger.info(f"Sidekick {self.sidekick_id}: Browser closed successfully")
+        except Exception as e:
+            logger.error(
+                f"Sidekick {self.sidekick_id}: Failed to close browser: "
+                f"{type(e).__name__}: {e}",
+                exc_info=True
+            )
+
+        # Stop playwright
+        if self.playwright:
             try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(self.browser.close())
-                if self.playwright:
-                    loop.create_task(self.playwright.stop())
-            except RuntimeError:
-                # If no loop is running, do a direct run
-                asyncio.run(self.browser.close())
-                if self.playwright:
-                    asyncio.run(self.playwright.stop())
+                logger.debug(f"Sidekick {self.sidekick_id}: Stopping playwright")
+                await self.playwright.stop()
+                logger.info(f"Sidekick {self.sidekick_id}: Playwright stopped successfully")
+            except Exception as e:
+                logger.error(
+                    f"Sidekick {self.sidekick_id}: Failed to stop playwright: "
+                    f"{type(e).__name__}: {e}",
+                    exc_info=True
+                )
+
+        logger.info(f"Sidekick {self.sidekick_id}: Cleanup completed")

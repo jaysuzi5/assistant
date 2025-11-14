@@ -1,5 +1,9 @@
 import gradio as gr
 from sidekick import Sidekick
+import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 async def setup():
@@ -20,12 +24,33 @@ async def reset():
 
 
 def free_resources(sidekick):
-    print("Cleaning up")
+    """Cleanup callback for Gradio state deletion.
+
+    This callback is invoked by Gradio when a session state is deleted (e.g., when
+    the user closes the browser or the session times out). Since Gradio callbacks
+    are synchronous but our cleanup is async, we use asyncio.run() to properly
+    await the async cleanup.
+
+    Args:
+        sidekick: The Sidekick instance to cleanup, or None if already cleaned.
+    """
+    if not sidekick:
+        logger.debug("No Sidekick instance to cleanup")
+        return
+
+    logger.info(f"free_resources called for Sidekick {sidekick.sidekick_id}")
+
     try:
-        if sidekick:
-            sidekick.cleanup()
+        # Gradio state deletion callback is synchronous, so we need to run
+        # the async cleanup in a new event loop.
+        asyncio.run(sidekick.cleanup())
+        logger.info(f"Sidekick {sidekick.sidekick_id} cleanup completed successfully")
     except Exception as e:
-        print(f"Exception during cleanup: {e}")
+        logger.error(
+            f"Exception during cleanup of Sidekick {sidekick.sidekick_id}: "
+            f"{type(e).__name__}: {e}",
+            exc_info=True
+        )
 
 
 with gr.Blocks(title="Sidekick", theme=gr.themes.Default(primary_hue="emerald")) as ui:
