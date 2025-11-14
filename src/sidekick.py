@@ -9,7 +9,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from sidekick_tools import playwright_tools, other_tools
 from llm_invocation import invoke_with_retry_sync, LLMInvocationError
 from tool_error_handler import (
@@ -19,6 +19,7 @@ from tool_error_handler import (
     format_tool_error_for_llm,
 )
 from config import WORKER_LLM_MODEL, EVALUATOR_LLM_MODEL, OPENAI_API_BASE, OPENAI_API_VERSION
+from validation import validate_run_superstep_input
 import uuid
 import asyncio
 from datetime import datetime
@@ -506,36 +507,59 @@ class Sidekick:
     async def run_superstep(
         self,
         message: str,
-        success_criteria: Optional[str],
-        history: List[Dict[str, str]]
+        success_criteria: Optional[str] = None,
+        history: List[Dict[str, str]] = None
     ) -> List[Dict[str, str]]:
-        """Execute one conversation turn in the state machine.
-
-        Invokes the LangGraph workflow with user message and success criteria,
-        collects tool results, and returns updated conversation history.
+        """Execute one conversation turn, validated with Pydantic models.
 
         Args:
-            message: User's task request
-            success_criteria: Task completion criteria (optional, defaults to generic criteria)
-            history: Previous conversation turns as list of role/content dicts
+            message: Task request (non-empty string, max 100k chars)
+            success_criteria: Completion criteria (optional, max 10k chars)
+            history: Previous turns (list of dicts with role/content, max 1000)
 
         Returns:
-            Updated conversation history with user message, assistant response, and feedback
-        """
-        config: Dict[str, Any] = {"configurable": {"thread_id": self.sidekick_id}}
+            Updated history with user message, response, and feedback
 
+        Raises:
+            ValueError: If validation fails (empty message, invalid roles, etc.)
+        """
+        # Provide default for history if not provided
+        if history is None:
+            history = []
+
+        # Validate all inputs using Pydantic
+        try:
+            validated_input = validate_run_superstep_input(
+                message=message,
+                success_criteria=success_criteria,
+                history=history
+            )
+        except ValidationError as e:
+            logger.error(f"Input validation failed: {e}")
+            raise ValueError(f"Invalid input: {e.errors()[0]['msg']}") from e
+
+        config: Dict[str, Any] = {"configurable": {"thread_id": self.sidekick_id}}
         state: Dict[str, Any] = {
-            "messages": message,
-            "success_criteria": success_criteria or "The answer should be clear and accurate",
+            "messages": validated_input.message,
+            "success_criteria": validated_input.success_criteria or "The answer should be clear and accurate",
             "feedback_on_work": None,
             "success_criteria_met": False,
             "user_input_needed": False,
         }
+
         result: Dict[str, Any] = await self.graph.ainvoke(state, config=config)
-        user: Dict[str, str] = {"role": "user", "content": message}
+        logger.debug(f"run_superstep: message_len={len(validated_input.message)}")
+        user: Dict[str, str] = {"role": "user", "content": validated_input.message}
         reply: Dict[str, str] = {"role": "assistant", "content": result["messages"][-2].content}
         feedback: Dict[str, str] = {"role": "assistant", "content": result["messages"][-1].content}
-        return history + [user, reply, feedback]
+
+        logger.debug(
+            f"run_superstep completed: "
+            f"reply_length={len(reply['content'])}, "
+            f"feedback_length={len(feedback['content'])}"
+        )
+
+        return validated_input.history + [user, reply, feedback]
 
     async def cleanup(self) -> None:
         """Properly cleanup browser and playwright resources.
