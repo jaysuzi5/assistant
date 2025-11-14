@@ -1,0 +1,31 @@
+Metadata-Version: 2.4
+Name: assistant
+Version: 0.1.0
+Summary: Add your description here
+Requires-Python: ==3.13.2
+Description-Content-Type: text/markdown
+Requires-Dist: beautifulsoup4>=4.14.2
+Requires-Dist: dotenv>=0.9.9
+Requires-Dist: gradio>=5.49.1
+Requires-Dist: langchain>=1.0.5
+Requires-Dist: langchain-community>=0.4.1
+Requires-Dist: langchain-experimental>=0.4.0
+Requires-Dist: langchain-openai>=1.0.2
+Requires-Dist: langgraph>=1.0.3
+Requires-Dist: lxml>=6.0.2
+Requires-Dist: playwright>=1.56.0
+Requires-Dist: wikipedia>=1.4.0
+Provides-Extra: test
+Requires-Dist: pytest>=7.4.0; extra == "test"
+Requires-Dist: pytest-asyncio>=0.21.0; extra == "test"
+Requires-Dist: pytest-cov>=4.1.0; extra == "test"
+Requires-Dist: pytest-mock>=3.11.0; extra == "test"
+Provides-Extra: dev
+Requires-Dist: mypy>=1.5.0; extra == "dev"
+Requires-Dist: black>=23.9.0; extra == "dev"
+Requires-Dist: ruff>=0.10.0; extra == "dev"
+Requires-Dist: types-requests>=2.31.0; extra == "dev"
+
+# AI Assistant
+## This is my generic anthropic AI Assistant
+This project started with some base code from Ed Donner in a Udemy class "Master AI Agents in 30 days: build 8 real-world projects with OpenAI Agents SDK, CrewAI, LangGraph, AutoGen and MCP." 
