@@ -26,7 +26,7 @@ async def setup() -> Sidekick:
 async def process_message(
     sidekick: Sidekick,
     message: str,
-    success_criteria: str,
+    success_criteria: Optional[str],
     history: List[Dict[str, str]]
 ) -> Tuple[List[Dict[str, str]], Sidekick]:
     """Process user message through the Sidekick workflow.
@@ -36,7 +36,7 @@ async def process_message(
     Args:
         sidekick: Current Sidekick instance
         message: User's task request
-        success_criteria: Task completion criteria
+        success_criteria: Task completion criteria (optional)
         history: Previous conversation turns
 
     Returns:

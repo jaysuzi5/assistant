@@ -127,7 +127,10 @@ class RunSuperstepInput(BaseModel):
     @field_validator('success_criteria')
     @classmethod
     def validate_success_criteria(cls, v: Optional[str]) -> Optional[str]:
-        """Validate that success_criteria is either None or a non-empty string."""
+        """Validate that success_criteria is either None or a non-empty string.
+
+        Empty strings are treated as None (will use default criteria).
+        """
         if v is None:
             return v
 
@@ -139,10 +142,9 @@ class RunSuperstepInput(BaseModel):
         # Strip and validate
         v = v.strip()
 
+        # Treat empty strings as None (will use default)
         if not v:
-            raise ValueError(
-                "success_criteria must not be empty (or None to use default)"
-            )
+            return None
 
         if len(v) > 10000:
             raise ValueError(

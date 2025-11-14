@@ -192,14 +192,13 @@ class TestRunSuperstepInputValidation:
         )
         assert input_data.success_criteria is None
 
-    def test_empty_success_criteria_rejected(self) -> None:
-        """Test that empty success_criteria is rejected."""
+    def test_empty_success_criteria_treated_as_none(self) -> None:
+        """Test that empty success_criteria is treated as None (uses default)."""
         from validation import RunSuperstepInput
 
-        with pytest.raises(ValidationError) as exc_info:
-            RunSuperstepInput(message="Task", success_criteria="")
-
-        assert "success_criteria must not be empty" in str(exc_info.value)
+        input_data = RunSuperstepInput(message="Task", success_criteria="")
+        # Empty string should be treated as None
+        assert input_data.success_criteria is None
 
     def test_success_criteria_max_length(self) -> None:
         """Test success_criteria length validation."""
