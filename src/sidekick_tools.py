@@ -12,6 +12,7 @@ from langchain_community.utilities import GoogleSerperAPIWrapper
 from langchain_community.utilities.wikipedia import WikipediaAPIWrapper
 from langchain_core.tools import BaseTool
 from typing import List, Tuple, Optional
+from config import PUSHOVER_REQUEST_TIMEOUT
 
 
 load_dotenv(override=True)
@@ -53,9 +54,30 @@ def push(text: str) -> str:
 
     Returns:
         "success" if notification sent, otherwise error message
+
+    Raises:
+        requests.exceptions.Timeout: If the request times out
+        requests.exceptions.RequestException: If the request fails
     """
-    requests.post(pushover_url, data = {"token": pushover_token, "user": pushover_user, "message": text})
-    return "success"
+    try:
+        requests.post(
+            pushover_url,
+            data={
+                "token": pushover_token,
+                "user": pushover_user,
+                "message": text
+            },
+            timeout=PUSHOVER_REQUEST_TIMEOUT
+        )
+        return "success"
+    except requests.exceptions.Timeout:
+        logger.error(
+            f"Push notification timeout after {PUSHOVER_REQUEST_TIMEOUT}s"
+        )
+        raise
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Push notification failed: {e}")
+        raise
 
 
 def get_file_tools() -> List[BaseTool]:
