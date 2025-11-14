@@ -1,7 +1,17 @@
 {
   "permissions": {
     "allow": [
-      "Bash(*:*)"
+      "Bash(*)",
+      "Bash(git:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git pull:*)",
+      "Bash(git merge:*)",
+      "Bash(git branch:*)",
+      "Bash(git checkout:*)",
+      "Bash(mkdir:*)",
+      "Bash(python -m pytest:*)"
     ],
     "deny": [
       "Bash(sudo *:*)",
@@ -10,7 +20,8 @@
       "Bash(rm -rf /System *:*)",
       "Bash(rm -rf /usr *:*)",
       "Bash(rm -rf /bin *:*)",
-      "Bash(rm -rf /etc *:*)"
+      "Bash(rm -rf /etc *:*)",
+      "Bash(rm -rf . *:*)"
     ],
     "ask": []
   }
