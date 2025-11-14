@@ -7,11 +7,17 @@ from langgraph.prebuilt import ToolNode
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.checkpoint.base import BaseCheckpointSaver
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage, ToolMessage
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 from sidekick_tools import playwright_tools, other_tools
 from llm_invocation import invoke_with_retry_sync, LLMInvocationError
+from tool_error_handler import (
+    ToolExecutionError,
+    wrap_tool_with_error_handling,
+    create_tool_error_message,
+    format_tool_error_for_llm,
+)
 import uuid
 import asyncio
 from datetime import datetime
@@ -37,6 +43,155 @@ class EvaluatorOutput(BaseModel):
     user_input_needed: bool = Field(
         description="True if more input is needed from the user, or clarifications, or the assistant is stuck"
     )
+
+
+class ErrorHandlingToolNode:
+    """Custom tool execution node with comprehensive error handling.
+
+    Replaces LangGraph's prebuilt ToolNode to add:
+    - Exception catching and logging for each tool execution
+    - Formatted error messages for LLM consumption
+    - Execution timing and instrumentation
+    - Graceful degradation when tools fail
+
+    This ensures that when tools fail, the worker LLM receives clear
+    feedback about what went wrong and can adjust its strategy accordingly.
+    """
+
+    def __init__(self, tools: List[BaseTool]):
+        """Initialize the error-handling tool node.
+
+        Args:
+            tools: List of tools available to the node
+        """
+        self.tools = {tool.name: tool for tool in tools}
+        self.tool_error_registry = {}
+
+    def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        """Execute tool calls from the last message with comprehensive error handling.
+
+        Args:
+            state: Graph state containing messages
+
+        Returns:
+            Updated state with tool results and error messages
+
+        Raises:
+            ValueError: If tool not found in registry
+        """
+        messages = state.get("messages", [])
+        if not messages:
+            return {"messages": []}
+
+        last_message = messages[-1]
+
+        # Extract tool calls from the last message
+        if not hasattr(last_message, "tool_calls") or not last_message.tool_calls:
+            logger.warning("ErrorHandlingToolNode called but no tool calls found")
+            return {"messages": []}
+
+        tool_calls = last_message.tool_calls
+        results = []
+
+        logger.info(
+            f"Processing {len(tool_calls)} tool call(s)",
+            extra={"tool_count": len(tool_calls)},
+        )
+
+        for tool_call in tool_calls:
+            tool_name = tool_call.get("name")
+            tool_input = tool_call.get("args", {})
+            tool_call_id = tool_call.get("id")
+
+            logger.debug(
+                f"Executing tool: {tool_name}",
+                extra={
+                    "tool_name": tool_name,
+                    "tool_call_id": tool_call_id,
+                    "input_keys": list(tool_input.keys()) if isinstance(tool_input, dict) else "N/A",
+                },
+            )
+
+            try:
+                # Get the tool
+                if tool_name not in self.tools:
+                    raise ValueError(f"Tool '{tool_name}' not found in registry")
+
+                tool = self.tools[tool_name]
+
+                # Execute the tool
+                if isinstance(tool_input, dict):
+                    tool_result = tool.invoke(tool_input)
+                else:
+                    tool_result = tool.invoke(tool_input)
+
+                # Log success
+                logger.info(
+                    f"Tool succeeded: {tool_name}",
+                    extra={
+                        "tool_name": tool_name,
+                        "result_length": len(str(tool_result)) if tool_result else 0,
+                    },
+                )
+
+                # Add successful result
+                result_message = ToolMessage(
+                    content=str(tool_result),
+                    tool_call_id=tool_call_id,
+                    name=tool_name,
+                )
+                results.append(result_message)
+
+            except Exception as e:
+                # Log the error with full context
+                error_type = type(e).__name__
+                error_message = str(e)
+
+                logger.error(
+                    f"Tool execution failed: {tool_name}",
+                    extra={
+                        "tool_name": tool_name,
+                        "tool_call_id": tool_call_id,
+                        "error_type": error_type,
+                        "error_message": error_message[:200],
+                    },
+                    exc_info=True,
+                )
+
+                # Track error in registry for observability
+                if tool_name not in self.tool_error_registry:
+                    self.tool_error_registry[tool_name] = []
+                self.tool_error_registry[tool_name].append(
+                    {
+                        "error_type": error_type,
+                        "error_message": error_message,
+                        "timestamp": datetime.now().isoformat(),
+                    }
+                )
+
+                # Create error message for LLM
+                formatted_error = format_tool_error_for_llm(tool_name, error_type, error_message)
+                error_result = ToolMessage(
+                    content=formatted_error,
+                    tool_call_id=tool_call_id,
+                    name=tool_name,
+                )
+                results.append(error_result)
+
+        logger.info(
+            f"Tool execution batch completed",
+            extra={"successful": len(results), "total": len(tool_calls)},
+        )
+
+        return {"messages": results}
+
+    def get_error_summary(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Get summary of all errors encountered.
+
+        Returns:
+            Dictionary mapping tool names to their errors
+        """
+        return self.tool_error_registry.copy()
 
 
 class Sidekick:
@@ -293,8 +448,12 @@ class Sidekick:
     async def build_graph(self) -> None:
         """Build LangGraph state machine for task execution.
 
-        Creates nodes for worker (LLM), tools (tool execution), and evaluator (task validation).
-        Compiles with memory checkpointer for state persistence.
+        Creates nodes for worker (LLM), tools (tool execution with error handling),
+        and evaluator (task validation). Compiles with memory checkpointer for
+        state persistence.
+
+        Uses ErrorHandlingToolNode instead of LangGraph's prebuilt ToolNode to
+        provide comprehensive error handling, logging, and formatted error messages.
 
         Raises:
             Exception: If graph compilation fails.
@@ -302,9 +461,12 @@ class Sidekick:
         # Set up Graph Builder with State
         graph_builder: StateGraph = StateGraph(State)
 
+        # Create error-handling tool node (replaces ToolNode)
+        error_handling_tool_node = ErrorHandlingToolNode(tools=self.tools)
+
         # Add nodes
         graph_builder.add_node("worker", self.worker)
-        graph_builder.add_node("tools", ToolNode(tools=self.tools))
+        graph_builder.add_node("tools", error_handling_tool_node)
         graph_builder.add_node("evaluator", self.evaluator)
 
         # Add edges
