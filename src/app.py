@@ -3,7 +3,10 @@ from sidekick import Sidekick
 import asyncio
 import logging
 from typing import List, Dict, Tuple, Optional, Any
+from logging_config import setup_logging, LogLevel
 
+# Initialize logging framework
+_logging_config = setup_logging(log_level=LogLevel.INFO)
 logger = logging.getLogger(__name__)
 
 
