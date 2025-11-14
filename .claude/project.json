@@ -1,35 +1,17 @@
 {
-    "permissions": {
-      "allow": [
-        "Bash(python:*)",
-        "Bash(uv:*)",
-        "Bash(pip:*)",
-        "Bash(uv run:*)",
-        "Bash(uv pip:*)",
-        "Bash(playwright:*)",
-        "Bash(ls:*)",
-        "Bash(cat:*)",
-        "Bash(tree:*)",
-        "Bash(find:*)",
-        "Bash(git *:*)",
-        "Bash(mkdir:*)",
-        "Bash(rm -rf ./*:*)",
-        "Bash(rm ./*:*)",
-        "Bash(cp ./*:*)",
-        "Bash(mv ./*:*)",
-        "Bash(code:*)",
-        "Bash(echo:*)"
-      ],
-      "deny": [
-        "Bash(sudo:*)",
-        "Bash(rm -rf /:*)",
-        "Bash(rm -rf ~:*)",
-        "Bash(rm -rf /System:*)",
-        "Bash(rm -rf /usr:*)",
-        "Bash(rm -rf /bin:*)",
-        "Bash(rm -rf /etc:*)"
-      ],
-      "ask": []
-    }
+  "permissions": {
+    "allow": [
+      "Bash(*:*)"
+    ],
+    "deny": [
+      "Bash(sudo *:*)",
+      "Bash(rm -rf / *:*)",
+      "Bash(rm -rf ~ *:*)",
+      "Bash(rm -rf /System *:*)",
+      "Bash(rm -rf /usr *:*)",
+      "Bash(rm -rf /bin *:*)",
+      "Bash(rm -rf /etc *:*)"
+    ],
+    "ask": []
   }
-  
+}
