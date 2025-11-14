@@ -12,7 +12,7 @@ from langchain_community.utilities import GoogleSerperAPIWrapper
 from langchain_community.utilities.wikipedia import WikipediaAPIWrapper
 from langchain_core.tools import BaseTool
 from typing import List, Tuple, Optional
-from config import PUSHOVER_REQUEST_TIMEOUT
+from config import PUSHOVER_REQUEST_TIMEOUT, PUSHOVER_API_URL
 
 
 load_dotenv(override=True)
@@ -24,8 +24,10 @@ ENABLE_PYTHON_REPL: bool = os.getenv("ENABLE_PYTHON_REPL", "false").lower() == "
 
 pushover_token: Optional[str] = os.getenv("PUSHOVER_TOKEN")
 pushover_user: Optional[str] = os.getenv("PUSHOVER_USER")
-pushover_url: str = "https://api.pushover.net/1/messages.json"
+pushover_url: str = PUSHOVER_API_URL  # Use configurable endpoint from config module
 serper: GoogleSerperAPIWrapper = GoogleSerperAPIWrapper()
+
+logger.debug(f"Pushover API endpoint configured: {pushover_url}")
 
 if ENABLE_PYTHON_REPL:
     logger.warning("⚠️  Python REPL tool is ENABLED. This allows arbitrary code execution.")

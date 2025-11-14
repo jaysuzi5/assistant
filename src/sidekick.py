@@ -18,6 +18,7 @@ from tool_error_handler import (
     create_tool_error_message,
     format_tool_error_for_llm,
 )
+from config import WORKER_LLM_MODEL, EVALUATOR_LLM_MODEL, OPENAI_API_BASE, OPENAI_API_VERSION
 import uuid
 import asyncio
 from datetime import datetime
@@ -224,10 +225,30 @@ class Sidekick:
         """
         self.tools, self.browser, self.playwright = await playwright_tools()
         self.tools += await other_tools()
-        worker_llm: ChatOpenAI = ChatOpenAI(model="gpt-4o-mini")
+
+        # Create worker LLM with configuration
+        worker_llm_kwargs: Dict[str, Any] = {"model": WORKER_LLM_MODEL}
+        if OPENAI_API_BASE:
+            worker_llm_kwargs["api_base"] = OPENAI_API_BASE
+        if OPENAI_API_VERSION:
+            worker_llm_kwargs["api_version"] = OPENAI_API_VERSION
+
+        worker_llm: ChatOpenAI = ChatOpenAI(**worker_llm_kwargs)
         self.worker_llm_with_tools = worker_llm.bind_tools(self.tools)
-        evaluator_llm: ChatOpenAI = ChatOpenAI(model="gpt-4o-mini")
+
+        # Create evaluator LLM with configuration
+        evaluator_llm_kwargs: Dict[str, Any] = {"model": EVALUATOR_LLM_MODEL}
+        if OPENAI_API_BASE:
+            evaluator_llm_kwargs["api_base"] = OPENAI_API_BASE
+        if OPENAI_API_VERSION:
+            evaluator_llm_kwargs["api_version"] = OPENAI_API_VERSION
+
+        evaluator_llm: ChatOpenAI = ChatOpenAI(**evaluator_llm_kwargs)
         self.evaluator_llm_with_output = evaluator_llm.with_structured_output(EvaluatorOutput)
+
+        logger.info(f"Worker LLM configured: {WORKER_LLM_MODEL}")
+        logger.info(f"Evaluator LLM configured: {EVALUATOR_LLM_MODEL}")
+
         await self.build_graph()
 
     def worker(self, state: State) -> Dict[str, Any]:
