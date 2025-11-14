@@ -7,3 +7,4 @@ sandbox/
 results.txt
 .coverage
 .DS_Store
+htmlcov/
