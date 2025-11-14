@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Any, Dict, List, Optional, Callable
 from typing_extensions import TypedDict
 from langgraph.graph import StateGraph, START, END
 from langgraph.graph.message import add_messages
@@ -6,8 +6,9 @@ from dotenv import load_dotenv
 from langgraph.prebuilt import ToolNode
 from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from typing import List, Any, Optional, Dict
+from langgraph.checkpoint.base import BaseCheckpointSaver
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
+from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 from sidekick_tools import playwright_tools, other_tools
 from llm_invocation import invoke_with_retry_sync, LLMInvocationError
@@ -15,6 +16,7 @@ import uuid
 import asyncio
 from datetime import datetime
 import logging
+from playwright.async_api import Browser, Playwright
 
 load_dotenv(override=True)
 
@@ -38,23 +40,38 @@ class EvaluatorOutput(BaseModel):
 
 
 class Sidekick:
-    def __init__(self):
-        self.worker_llm_with_tools = None
-        self.evaluator_llm_with_output = None
-        self.tools = None
-        self.llm_with_tools = None
-        self.graph = None
-        self.sidekick_id = str(uuid.uuid4())
-        self.memory = MemorySaver()
-        self.browser = None
-        self.playwright = None
+    """AI agent orchestrator using LangGraph state machine.
 
-    async def setup(self):
+    Manages worker/tools/evaluator flow for completing tasks with tool-calling LLMs.
+    Handles browser lifecycle, tool binding, and state management.
+    """
+
+    def __init__(self) -> None:
+        """Initialize Sidekick instance with empty state."""
+        self.worker_llm_with_tools: Optional[Any] = None
+        self.evaluator_llm_with_output: Optional[Any] = None
+        self.tools: Optional[List[BaseTool]] = None
+        self.llm_with_tools: Optional[Any] = None
+        self.graph: Optional[Any] = None  # CompiledStateGraph from langgraph
+        self.sidekick_id: str = str(uuid.uuid4())
+        self.memory: BaseCheckpointSaver = MemorySaver()
+        self.browser: Optional[Browser] = None
+        self.playwright: Optional[Playwright] = None
+
+    async def setup(self) -> None:
+        """Initialize LLMs, tools, and build state graph.
+
+        Loads Playwright browser, binds tools to worker LLM, and compiles LangGraph.
+        Must be called before any task execution.
+
+        Raises:
+            Exception: If Playwright launch or LLM initialization fails.
+        """
         self.tools, self.browser, self.playwright = await playwright_tools()
         self.tools += await other_tools()
-        worker_llm = ChatOpenAI(model="gpt-4o-mini")
+        worker_llm: ChatOpenAI = ChatOpenAI(model="gpt-4o-mini")
         self.worker_llm_with_tools = worker_llm.bind_tools(self.tools)
-        evaluator_llm = ChatOpenAI(model="gpt-4o-mini")
+        evaluator_llm: ChatOpenAI = ChatOpenAI(model="gpt-4o-mini")
         self.evaluator_llm_with_output = evaluator_llm.with_structured_output(EvaluatorOutput)
         await self.build_graph()
 
@@ -136,24 +153,40 @@ class Sidekick:
         }
 
     def worker_router(self, state: State) -> str:
-        last_message = state["messages"][-1]
+        """Route worker output to tools or evaluator based on tool calls.
+
+        Args:
+            state: Current graph state with messages
+
+        Returns:
+            "tools" if last message has tool calls, else "evaluator"
+        """
+        last_message: BaseMessage = state["messages"][-1]
 
         if hasattr(last_message, "tool_calls") and last_message.tool_calls:
             return "tools"
         else:
             return "evaluator"
 
-    def format_conversation(self, messages: List[Any]) -> str:
-        conversation = "Conversation history:\n\n"
+    def format_conversation(self, messages: List[BaseMessage]) -> str:
+        """Format conversation history for evaluator input.
+
+        Args:
+            messages: List of LangChain BaseMessage objects
+
+        Returns:
+            Formatted conversation string with User/Assistant labels
+        """
+        conversation: str = "Conversation history:\n\n"
         for message in messages:
             if isinstance(message, HumanMessage):
                 conversation += f"User: {message.content}\n"
             elif isinstance(message, AIMessage):
-                text = message.content or "[Tools use]"
+                text: str = message.content or "[Tools use]"
                 conversation += f"Assistant: {text}\n"
         return conversation
 
-    def evaluator(self, state: State) -> State:
+    def evaluator(self, state: State) -> Dict[str, Any]:
         """Evaluate the assistant's response against success criteria.
 
         This method invokes the evaluator LLM to determine if the task has been
@@ -164,18 +197,18 @@ class Sidekick:
             state: Current graph state with messages and criteria
 
         Returns:
-            Updated state with evaluation results
+            Updated state dictionary with evaluation results
 
         Raises:
             LLMInvocationError: If evaluator LLM invocation fails after retries
         """
-        last_response = state["messages"][-1].content
+        last_response: str = state["messages"][-1].content
 
-        system_message = """You are an evaluator that determines if a task has been completed successfully by an Assistant.
+        system_message: str = """You are an evaluator that determines if a task has been completed successfully by an Assistant.
     Assess the Assistant's last response based on the given criteria. Respond with your feedback, and with your decision on whether the success criteria has been met,
     and whether more input is needed from the user."""
 
-        user_message = f"""You are evaluating a conversation between the User and Assistant. You decide what action to take based on the last response from the Assistant.
+        user_message: str = f"""You are evaluating a conversation between the User and Assistant. You decide what action to take based on the last response from the Assistant.
 
     The entire conversation with the assistant, with the user's original request and all replies, is:
     {self.format_conversation(state["messages"])}
@@ -197,14 +230,14 @@ class Sidekick:
             user_message += f"Also, note that in a prior attempt from the Assistant, you provided this feedback: {state['feedback_on_work']}\n"
             user_message += "If you're seeing the Assistant repeating the same mistakes, then consider responding that user input is required."
 
-        evaluator_messages = [
+        evaluator_messages: List[BaseMessage] = [
             SystemMessage(content=system_message),
             HumanMessage(content=user_message),
         ]
 
         # Invoke evaluator LLM with retry logic
         try:
-            eval_result = invoke_with_retry_sync(
+            eval_result: EvaluatorOutput = invoke_with_retry_sync(
                 lambda: self.evaluator_llm_with_output.invoke(evaluator_messages),
                 max_retries=3,
                 initial_delay=1.0,
@@ -216,7 +249,7 @@ class Sidekick:
                 exc_info=True
             )
             # Return a state that requests user input (fail-safe)
-            new_state = {
+            new_state: Dict[str, Any] = {
                 "messages": [
                     {
                         "role": "assistant",
@@ -230,7 +263,7 @@ class Sidekick:
             }
             return new_state
 
-        new_state = {
+        new_state: Dict[str, Any] = {
             "messages": [
                 {
                     "role": "assistant",
@@ -244,14 +277,30 @@ class Sidekick:
         return new_state
 
     def route_based_on_evaluation(self, state: State) -> str:
+        """Route evaluator output to end or back to worker.
+
+        Args:
+            state: Current graph state with evaluation results
+
+        Returns:
+            "END" if criteria met or user input needed, else "worker"
+        """
         if state["success_criteria_met"] or state["user_input_needed"]:
             return "END"
         else:
             return "worker"
 
-    async def build_graph(self):
+    async def build_graph(self) -> None:
+        """Build LangGraph state machine for task execution.
+
+        Creates nodes for worker (LLM), tools (tool execution), and evaluator (task validation).
+        Compiles with memory checkpointer for state persistence.
+
+        Raises:
+            Exception: If graph compilation fails.
+        """
         # Set up Graph Builder with State
-        graph_builder = StateGraph(State)
+        graph_builder: StateGraph = StateGraph(State)
 
         # Add nodes
         graph_builder.add_node("worker", self.worker)
@@ -271,20 +320,38 @@ class Sidekick:
         # Compile the graph
         self.graph = graph_builder.compile(checkpointer=self.memory)
 
-    async def run_superstep(self, message, success_criteria, history):
-        config = {"configurable": {"thread_id": self.sidekick_id}}
+    async def run_superstep(
+        self,
+        message: str,
+        success_criteria: Optional[str],
+        history: List[Dict[str, str]]
+    ) -> List[Dict[str, str]]:
+        """Execute one conversation turn in the state machine.
 
-        state = {
+        Invokes the LangGraph workflow with user message and success criteria,
+        collects tool results, and returns updated conversation history.
+
+        Args:
+            message: User's task request
+            success_criteria: Task completion criteria (optional, defaults to generic criteria)
+            history: Previous conversation turns as list of role/content dicts
+
+        Returns:
+            Updated conversation history with user message, assistant response, and feedback
+        """
+        config: Dict[str, Any] = {"configurable": {"thread_id": self.sidekick_id}}
+
+        state: Dict[str, Any] = {
             "messages": message,
             "success_criteria": success_criteria or "The answer should be clear and accurate",
             "feedback_on_work": None,
             "success_criteria_met": False,
             "user_input_needed": False,
         }
-        result = await self.graph.ainvoke(state, config=config)
-        user = {"role": "user", "content": message}
-        reply = {"role": "assistant", "content": result["messages"][-2].content}
-        feedback = {"role": "assistant", "content": result["messages"][-1].content}
+        result: Dict[str, Any] = await self.graph.ainvoke(state, config=config)
+        user: Dict[str, str] = {"role": "user", "content": message}
+        reply: Dict[str, str] = {"role": "assistant", "content": result["messages"][-2].content}
+        feedback: Dict[str, str] = {"role": "assistant", "content": result["messages"][-1].content}
         return history + [user, reply, feedback]
 
     async def cleanup(self) -> None:

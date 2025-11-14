@@ -2,28 +2,61 @@ import gradio as gr
 from sidekick import Sidekick
 import asyncio
 import logging
+from typing import List, Dict, Tuple, Optional, Any
 
 logger = logging.getLogger(__name__)
 
 
-async def setup():
-    sidekick = Sidekick()
+async def setup() -> Sidekick:
+    """Initialize Sidekick instance with LLM setup and browser launch.
+
+    Called when Gradio UI loads to create a new agent session.
+
+    Returns:
+        Initialized Sidekick instance ready for task execution.
+    """
+    sidekick: Sidekick = Sidekick()
     await sidekick.setup()
     return sidekick
 
 
-async def process_message(sidekick, message, success_criteria, history):
-    results = await sidekick.run_superstep(message, success_criteria, history)
+async def process_message(
+    sidekick: Sidekick,
+    message: str,
+    success_criteria: str,
+    history: List[Dict[str, str]]
+) -> Tuple[List[Dict[str, str]], Sidekick]:
+    """Process user message through the Sidekick workflow.
+
+    Executes one conversation turn and returns updated history.
+
+    Args:
+        sidekick: Current Sidekick instance
+        message: User's task request
+        success_criteria: Task completion criteria
+        history: Previous conversation turns
+
+    Returns:
+        Tuple of (updated conversation history, sidekick instance)
+    """
+    results: List[Dict[str, str]] = await sidekick.run_superstep(message, success_criteria, history)
     return results, sidekick
 
 
-async def reset():
-    new_sidekick = Sidekick()
+async def reset() -> Tuple[str, str, None, Sidekick]:
+    """Reset conversation and create new Sidekick instance.
+
+    Clears message/criteria fields and initializes fresh agent session.
+
+    Returns:
+        Tuple of (empty message, empty criteria, None for history, new Sidekick)
+    """
+    new_sidekick: Sidekick = Sidekick()
     await new_sidekick.setup()
     return "", "", None, new_sidekick
 
 
-def free_resources(sidekick):
+def free_resources(sidekick: Optional[Sidekick]) -> None:
     """Cleanup callback for Gradio state deletion.
 
     This callback is invoked by Gradio when a session state is deleted (e.g., when
