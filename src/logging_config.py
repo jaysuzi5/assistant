@@ -57,9 +57,19 @@ class ColoredFormatter(logging.Formatter):
         Returns:
             Formatted log message with color codes
         """
+        # Get the formatted string from parent formatter
+        formatted = super().format(record)
+
+        # Apply colors only to the output string, not the record itself
+        # This prevents color codes from bleeding into file output
         color = self.COLORS.get(record.levelno, self.RESET)
-        record.levelname = f"{color}{record.levelname}{self.RESET}"
-        return super().format(record)
+
+        # Replace the levelname in the formatted string with colored version
+        # The format string is: "%(levelname)s | %(name)s | %(message)s"
+        levelname_plain = record.levelname
+        levelname_colored = f"{color}{levelname_plain}{self.RESET}"
+
+        return formatted.replace(levelname_plain, levelname_colored, 1)
 
 
 class StructuredFormatter(logging.Formatter):
