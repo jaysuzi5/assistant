@@ -9,3 +9,4 @@ results.txt
 .DS_Store
 htmlcov/
 logs/
+memory.db*
