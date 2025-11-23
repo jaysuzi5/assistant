@@ -252,6 +252,56 @@ class Sidekick:
 
         await self.build_graph()
 
+    def _prepare_messages(self, message: str, history: List[Dict[str, str]]) -> List[BaseMessage]:
+        """Convert various message formats to LangChain BaseMessage list.
+
+        Handles:
+        - Plain string messages
+        - Message history as dicts with role/content
+        - Gradio chat format with metadata fields
+        - System message injection for success criteria
+
+        Args:
+            message: Current user message as string
+            history: Previous conversation as list of dicts
+
+        Returns:
+            Properly formatted List[BaseMessage] for LangGraph state machine
+
+        Raises:
+            ValueError: If message or history contains invalid format
+        """
+        messages: List[BaseMessage] = []
+
+        # Add conversation history (converted to BaseMessage objects)
+        for item in history:
+            role = item.get('role', '').lower()
+            content = item.get('content', '').strip()
+
+            if not content:
+                continue  # Skip empty messages
+
+            if role == 'user':
+                messages.append(HumanMessage(content=content))
+            elif role == 'assistant':
+                messages.append(AIMessage(content=content))
+            elif role == 'system':
+                messages.append(SystemMessage(content=content))
+            # Ignore messages with invalid roles (validation should catch this)
+
+        # Add current user message
+        messages.append(HumanMessage(content=message))
+
+        logger.debug(
+            f"Prepared messages for state machine",
+            extra={
+                "history_items": len(history),
+                "total_messages": len(messages),
+            }
+        )
+
+        return messages
+
     def worker(self, state: State) -> Dict[str, Any]:
         """Execute worker node to invoke LLM and process messages.
 
@@ -539,8 +589,12 @@ class Sidekick:
             raise ValueError(f"Invalid input: {e.errors()[0]['msg']}") from e
 
         config: Dict[str, Any] = {"configurable": {"thread_id": self.sidekick_id}}
+
+        # Prepare messages in proper LangChain format (List[BaseMessage])
+        prepared_messages = self._prepare_messages(validated_input.message, validated_input.history or [])
+
         state: Dict[str, Any] = {
-            "messages": validated_input.message,
+            "messages": prepared_messages,  # Now properly formatted List[BaseMessage]
             "success_criteria": validated_input.success_criteria or "The answer should be clear and accurate",
             "feedback_on_work": None,
             "success_criteria_met": False,
