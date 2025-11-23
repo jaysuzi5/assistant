@@ -322,20 +322,27 @@ class TestRunSuperstepInputValidation:
         assert len(input_data.history) == 4
 
     def test_alternating_roles_invalid(self) -> None:
-        """Test that non-alternating roles are rejected."""
+        """Test that non-alternating roles are now allowed (Gradio compatibility).
+
+        Previously this would fail, but we relaxed this constraint to support
+        natural conversation flow where the same role may speak twice in a row
+        (e.g., Gradio chat UI may include multiple consecutive messages).
+        """
         from validation import RunSuperstepInput
 
-        # Two users in a row
-        with pytest.raises(ValidationError) as exc_info:
-            RunSuperstepInput(
-                message="Task",
-                history=[
-                    {"role": "user", "content": "Q1"},
-                    {"role": "user", "content": "Q2"}
-                ]
-            )
+        # Two users in a row - now allowed for Gradio compatibility
+        input_data = RunSuperstepInput(
+            message="Task",
+            history=[
+                {"role": "user", "content": "Q1"},
+                {"role": "user", "content": "Q2"}
+            ]
+        )
 
-        assert "should alternate" in str(exc_info.value)
+        # Should succeed now
+        assert len(input_data.history) == 2
+        assert input_data.history[0]["role"] == "user"
+        assert input_data.history[1]["role"] == "user"
 
     def test_alternating_roles_with_system(self) -> None:
         """Test alternation validation ignores system messages."""
@@ -461,22 +468,25 @@ class TestErrorMessages:
             error_msg = str(e)
             assert "role" in error_msg.lower()
 
-    def test_error_message_on_non_alternating_roles(self) -> None:
-        """Test error message for non-alternating roles."""
+    def test_error_message_on_invalid_role(self) -> None:
+        """Test error message for invalid role (not for non-alternating).
+
+        Note: Non-alternating roles are now allowed for Gradio compatibility.
+        This test now checks for invalid role values instead.
+        """
         from validation import RunSuperstepInput
 
         try:
             RunSuperstepInput(
                 message="Task",
                 history=[
-                    {"role": "user", "content": "Q1"},
-                    {"role": "user", "content": "Q2"}
+                    {"role": "invalid_role", "content": "Q1"}
                 ]
             )
             pytest.fail("Should have raised ValidationError")
         except ValidationError as e:
             error_msg = str(e)
-            assert "alternate" in error_msg.lower()
+            assert "invalid role" in error_msg.lower() or "role" in error_msg.lower()
 
 
 class TestBackwardCompatibility:

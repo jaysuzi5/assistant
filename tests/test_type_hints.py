@@ -321,8 +321,8 @@ class TestVariableTypeAnnotations:
             content = f.read()
 
         run_start = content.find('async def run_superstep(')
-        # Get section to capture the method
-        run_section = content[run_start:run_start+2000]
+        # Get section to capture the method - increased from 2000 to 3500 to include all variable declarations
+        run_section = content[run_start:run_start+3500]
 
         # Check for typed variables
         assert 'config: Dict[str, Any] =' in run_section
