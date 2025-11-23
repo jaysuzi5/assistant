@@ -11,9 +11,8 @@ Key components:
 - Custom validators for specific constraints
 """
 
-from pydantic import BaseModel, Field, field_validator, model_validator
-from typing import List, Dict, Optional, Any
-import re
+from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
+from typing import List, Dict, Optional
 
 
 class HistoryItemInput(BaseModel):
@@ -38,9 +37,7 @@ class HistoryItemInput(BaseModel):
         description="Message content (must be non-empty)"
     )
 
-    class Config:
-        """Pydantic configuration for HistoryItemInput."""
-        extra = "ignore"  # Ignore extra fields from Gradio (metadata, options, etc.)
+    model_config = ConfigDict(extra="ignore")  # Ignore extra fields from Gradio (metadata, options, etc.)
 
     @field_validator('role')
     @classmethod
@@ -96,7 +93,7 @@ class RunSuperstepInput(BaseModel):
         default=None,
         description="Task completion criteria (optional)"
     )
-    history: List[Dict[str, str]] = Field(
+    history: List[Dict] = Field(
         default_factory=list,
         description="Previous conversation history"
     )
@@ -192,35 +189,25 @@ class RunSuperstepInput(BaseModel):
         return validated_items
 
     @model_validator(mode='after')
-    def validate_alternating_roles(self) -> 'RunSuperstepInput':
-        """Validate that history alternates between user and assistant.
+    def validate_history_structure(self) -> 'RunSuperstepInput':
+        """Validate that history contains only valid roles.
 
-        This check helps catch malformed histories that might confuse the LLM.
-        The pattern should be: user, assistant, [user, assistant, ...], user
-
-        Note: We allow system messages at the start for context injection.
+        This is a lightweight check that ensures only valid roles are present.
+        We don't enforce strict alternation because Gradio chat UI may include
+        consecutive messages from the same role during conversation flow.
         """
         if not self.history:
             return self
 
-        # Filter out system messages for role alternation check
-        non_system = [h for h in self.history if h['role'] != 'system']
-
-        if not non_system:
-            # Only system messages, which is fine
-            return self
-
-        # Check that non-system messages alternate between user and assistant
-        expected_role = 'user'
-        for i, item in enumerate(non_system):
-            if item['role'] != expected_role:
+        # Only validate that roles are valid; don't enforce alternation
+        valid_roles = {'user', 'assistant', 'system'}
+        for i, item in enumerate(self.history):
+            role = item.get('role')
+            if role not in valid_roles:
                 raise ValueError(
-                    f"history: messages should alternate between user and "
-                    f"assistant. Expected '{expected_role}' at position {i}, "
-                    f"got '{item['role']}'"
+                    f"history[{i}]: invalid role '{role}'. "
+                    f"Must be one of {valid_roles}"
                 )
-            # Toggle expected role
-            expected_role = 'assistant' if expected_role == 'user' else 'user'
 
         return self
 
