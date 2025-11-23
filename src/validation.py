@@ -157,7 +157,10 @@ class RunSuperstepInput(BaseModel):
     @field_validator('history')
     @classmethod
     def validate_history(cls, v: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """Validate that history is a list of valid history items."""
+        """Validate that history is a list of valid history items.
+
+        Filters out extra Gradio chat fields (metadata, options) that may be None.
+        """
         if not isinstance(v, list):
             raise ValueError(
                 f"history must be a list, got {type(v).__name__}"
@@ -176,8 +179,15 @@ class RunSuperstepInput(BaseModel):
                     f"history[{i}] must be a dict, got {type(item).__name__}"
                 )
 
+            # Filter out extra Gradio chat fields (metadata, options, etc.)
+            # These may be None and will cause validation errors, but we only care about role/content
+            filtered_item = {
+                "role": item.get("role"),
+                "content": item.get("content")
+            }
+
             try:
-                validated_item = HistoryItemInput(**item)
+                validated_item = HistoryItemInput(**filtered_item)
                 validated_items.append({
                     "role": validated_item.role,
                     "content": validated_item.content
